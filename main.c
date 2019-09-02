@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
-#include <linux/udp.h>
+#include <linux/tcp.h>
 #include <linux/in.h>
 #include <linux/ip.h>
 #include <stdio.h>
@@ -26,6 +26,7 @@ const int NUMBER_OF_PORTS = 65536; // Real numbers 2¹⁶
 int loopCondition = 1;
 
 
+
 void endLoop() {
 	loopCondition = 0;
 	printf("Exit reading\n");
@@ -40,13 +41,35 @@ void printEthernetHeader(unsigned char *buffer) {
 	printf("\t|-Protocol : %d\n",eth->h_proto);
 }
 
-//void printTCPHeader(unsigned char *buffer) {
-//	unsigned short iphdrlen;
-//	struct tcphdr udp=(struct udphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
-//}
+void printRemainingData(unsigned char *buffer,unsigned short iphdrlen,ssize_t numberOfBytesReaded) {
+	unsigned char * data = (buffer + sizeof(struct ethhdr) + iphdrlen + sizeof(struct tcphdr));
+	int remaining_data = numberOfBytesReaded - (iphdrlen + sizeof(struct ethhdr) + sizeof(struct tcphdr));
+	printf("\nData\n");
 
-void printIPHeader(unsigned char *buffer){
+	for(int i = 0;i < remaining_data; i++){
+		if(i != 0 && i%16 == 0)
+			printf("\n");
+		printf("%d ",data[i]);
+	}
+}
+
+
+void printAsTCPHeader(unsigned char *buffer,unsigned short iphdrlen,ssize_t numberOfBytesReaded) {
+	struct tcphdr *tcp = (struct tcphdr*)(buffer + iphdrlen + sizeof(struct ethhdr));
+
+	printf("TCP Header\n");
+	printf("\t|-Source Port: %d\n",ntohs(tcp->source));
+	printf("\t|-Destination Port: %d\n",ntohs(tcp->dest));
+	printf("\t|-Sequence Numbers: %d\n",ntohl(tcp->seq));
+	printf("\t|-CheckSum: %d\n",ntohl(tcp->check));
+
+	printRemainingData(buffer,iphdrlen,numberOfBytesReaded);
+
+}
+
+void printIPHeader(unsigned char *buffer,ssize_t numberOfBytesReaded){
 	struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
+	unsigned short iphdrlen = ip->ihl*4;
 	struct sockaddr_in source,destination;
 
 	memset(&source, 0, sizeof(source));
@@ -65,16 +88,20 @@ void printIPHeader(unsigned char *buffer){
 	printf("\t|-Identification : %d\n",ntohs(ip->id));
 	printf("\t|-Time To Live : %d\n",(unsigned int)ip->ttl);
 
-//	printTCPHeader(buffer);
+	printAsTCPHeader(buffer,iphdrlen,numberOfBytesReaded);
 }
 
-void printData(unsigned char *buffer) {
+void printData(unsigned char *buffer,ssize_t numberOfBytesReaded) {
 	printEthernetHeader(buffer);
-	printIPHeader(buffer);
+	printIPHeader(buffer,numberOfBytesReaded);
 }
 
 
 int main(int argc, char **argv) {
+	if (argc > 1 && !strcmp(argv[1],"false")) {
+		loopCondition = 0;
+	}
+
 	/* The use of ETH_P_ALL is for all types of packets
 	 * ETH_P_IP for only IP packets
 	 */
@@ -86,12 +113,11 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	unsigned char *buffer = (unsigned char *) malloc(NUMBER_OF_PORTS); // aquí se recibe por todos los puertos
-	memset(buffer,0,NUMBER_OF_PORTS);
+	unsigned char *buffer = (unsigned char *) calloc(0,NUMBER_OF_PORTS);//(NUMBER_OF_PORTS); // aquí se recibe por todos los puertos
 	struct sockaddr socketAddress;
 	int socketAddressLen = sizeof(socketAddress);
 
-	while(loopCondition) {
+	do {
 		ssize_t numberOfBytesReaded = recvfrom(rawSocket,buffer,65536,0,&socketAddress,(socklen_t*) &socketAddressLen);
 
 		if ((numberOfBytesReaded < 0) && (loopCondition) ) {
@@ -99,9 +125,9 @@ int main(int argc, char **argv) {
 			return 1;
 		}
 
-		printData(buffer);
+		printData(buffer,numberOfBytesReaded);
 		sleep(1);
-	}
+	} while(loopCondition);
 
 	close(rawSocket);
 
