@@ -87,6 +87,8 @@ void printIPHeader(unsigned char *buffer,ssize_t numberOfBytesReaded){
 	printf("\t|-Header Checksum : %d\n",ntohs(ip->check));
 	printf("\t|-Identification : %d\n",ntohs(ip->id));
 	printf("\t|-Time To Live : %d\n",(unsigned int)ip->ttl);
+	printf("\t|-Protocol: %d\n",(unsigned int)ip->protocol);
+	printf("\t|-More fragments: %d\n", ntohs(ip->frag_off)/4);
 
 	printAsTCPHeader(buffer,iphdrlen,numberOfBytesReaded);
 }
